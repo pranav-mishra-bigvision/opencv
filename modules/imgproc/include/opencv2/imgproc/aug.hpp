@@ -106,6 +106,153 @@ CV_EXPORTS void randomPerspectiveRemap(
         uint64 seed,
         AugmentationReplay* replay);
 
+/** @brief Function-style randomized brightness/contrast adjustment.
+
+Depth/channel behavior:
+- Supported depths: `CV_8U`, `CV_16U`, `CV_32F`.
+- Supported layouts: grayscale (1 channel), BGR (3 channels), BGRA (4 channels).
+- Processing is performed in normalized [0,1] domain and converted back to the source depth.
+  - `CV_8U`: value range maps to [0,255].
+  - `CV_16U`: value range maps to [0,65535].
+  - `CV_32F`: values are treated directly as normalized [0,1].
+
+@param src Source image.
+@param dst Destination image.
+@param maxBrightnessDelta Max absolute additive brightness delta in normalized units.
+@param maxContrastDelta Max absolute contrast delta. Contrast multiplier is sampled from
+       `[1-maxContrastDelta, 1+maxContrastDelta]` and clamped to non-negative.
+@param seed Optional deterministic seed. Use 0 for implementation-defined non-deterministic seeding.
+*/
+CV_EXPORTS_W void randomBrightnessContrast(
+        InputArray src,
+        OutputArray dst,
+        double maxBrightnessDelta,
+        double maxContrastDelta,
+        uint64 seed = 0);
+
+CV_EXPORTS void randomBrightnessContrast(
+        InputArray src,
+        OutputArray dst,
+        double maxBrightnessDelta,
+        double maxContrastDelta,
+        uint64 seed,
+        AugmentationReplay* replay);
+
+/** @brief Function-style randomized gamma correction.
+
+Depth/channel behavior follows @ref randomBrightnessContrast.
+
+@param src Source image.
+@param dst Destination image.
+@param maxGammaDelta Max absolute gamma delta. Gamma is sampled from
+       `[1-maxGammaDelta, 1+maxGammaDelta]` and clamped to a small positive value.
+@param seed Optional deterministic seed. Use 0 for implementation-defined non-deterministic seeding.
+*/
+CV_EXPORTS_W void randomGamma(
+        InputArray src,
+        OutputArray dst,
+        double maxGammaDelta,
+        uint64 seed = 0);
+
+CV_EXPORTS void randomGamma(
+        InputArray src,
+        OutputArray dst,
+        double maxGammaDelta,
+        uint64 seed,
+        AugmentationReplay* replay);
+
+/** @brief Function-style randomized per-channel jitter (scale and bias).
+
+Depth/channel behavior follows @ref randomBrightnessContrast.
+
+@param src Source image.
+@param dst Destination image.
+@param maxScaleDelta Max absolute per-channel multiplicative delta around 1.
+@param maxBiasDelta Max absolute per-channel additive delta in normalized units.
+@param seed Optional deterministic seed. Use 0 for implementation-defined non-deterministic seeding.
+*/
+CV_EXPORTS_W void randomColorJitter(
+        InputArray src,
+        OutputArray dst,
+        double maxScaleDelta,
+        double maxBiasDelta,
+        uint64 seed = 0);
+
+CV_EXPORTS void randomColorJitter(
+        InputArray src,
+        OutputArray dst,
+        double maxScaleDelta,
+        double maxBiasDelta,
+        uint64 seed,
+        AugmentationReplay* replay);
+
+/** @brief Function-style randomized additive Gaussian noise.
+
+Depth/channel behavior follows @ref randomBrightnessContrast.
+
+@param src Source image.
+@param dst Destination image.
+@param maxStdDev Max noise standard deviation in normalized [0,1] units.
+@param seed Optional deterministic seed. Use 0 for implementation-defined non-deterministic seeding.
+*/
+CV_EXPORTS_W void randomGaussianNoise(
+        InputArray src,
+        OutputArray dst,
+        double maxStdDev,
+        uint64 seed = 0);
+
+CV_EXPORTS void randomGaussianNoise(
+        InputArray src,
+        OutputArray dst,
+        double maxStdDev,
+        uint64 seed,
+        AugmentationReplay* replay);
+
+/** @brief Function-style randomized blur.
+
+Depth/channel behavior follows @ref randomBrightnessContrast.
+
+@param src Source image.
+@param dst Destination image.
+@param maxKernelRadius Max blur radius. Actual odd kernel size is sampled from `1..(2*maxKernelRadius+1)`.
+@param seed Optional deterministic seed. Use 0 for implementation-defined non-deterministic seeding.
+*/
+CV_EXPORTS_W void randomBlur(
+        InputArray src,
+        OutputArray dst,
+        int maxKernelRadius,
+        uint64 seed = 0);
+
+CV_EXPORTS void randomBlur(
+        InputArray src,
+        OutputArray dst,
+        int maxKernelRadius,
+        uint64 seed,
+        AugmentationReplay* replay);
+
+/** @brief Function-style randomized channel shuffle.
+
+Supports BGR (3 channels) and BGRA (4 channels). For BGRA, only BGR channels are shuffled;
+alpha is preserved. Grayscale inputs are copied unchanged.
+
+@param src Source image.
+@param dst Destination image.
+@param probability Probability in [0,1] of applying the channel shuffle.
+@param seed Optional deterministic seed. Use 0 for implementation-defined non-deterministic seeding.
+*/
+CV_EXPORTS_W void randomChannelShuffle(
+        InputArray src,
+        OutputArray dst,
+        double probability = 0.5,
+        uint64 seed = 0);
+
+CV_EXPORTS void randomChannelShuffle(
+        InputArray src,
+        OutputArray dst,
+        double probability,
+        uint64 seed,
+        AugmentationReplay* replay);
+
 /** @brief Function-style randomized perspective transform.
 
 Builds a quadrilateral by jittering each source-image corner and warps it to the original image

@@ -52,10 +52,10 @@ This split is considered stable for the initial rollout.
 
 ### Depth and channel constraints
 
-- Supported source depths for geometric/color/intensity ops: `CV_8U`, `CV_16U`, `CV_16S`, `CV_32F`.
-- `CV_64F` may be accepted for select operations where current imgproc kernels are already stable.
-- `CV_8S` and `CV_32S` remain unsupported for geometric transforms, matching imgproc constraints.
-- Channels: 1, 3, and 4 are required baseline support.
+- For the initial augmentation API, supported source depths are `CV_8U`, `CV_16U`, and `CV_32F`.
+- `CV_8S`, `CV_16S`, `CV_32S`, and `CV_64F` are not supported and must fail with `Error::StsUnsupportedFormat`.
+- Supported channel layouts are grayscale (1 channel), BGR (3 channels), and BGRA (4 channels).
+- For BGRA inputs, intensity/color operations modify BGR channels and preserve alpha.
 
 ### Output typing rules
 
@@ -116,3 +116,11 @@ This split is considered stable for the initial rollout.
 - Batched tensor-native API beyond `InputArray`/`OutputArray`.
 - Backend-specific acceleration policy (OpenCL, CUDA, oneDNN, etc.).
 - Serialization format for augmentation pipelines.
+
+## 10. Intensity/color operation behavior
+
+- Normalized processing domain is `[0,1]`.
+- `CV_8U`: values are normalized by `1/255` and converted back with saturation.
+- `CV_16U`: values are normalized by `1/65535` and converted back with saturation.
+- `CV_32F`: values are interpreted as normalized already; outputs are clamped to `[0,1]`.
+- `randomChannelShuffle` applies only to BGR/BGRA; grayscale is a no-op copy. For BGRA, alpha is preserved.
