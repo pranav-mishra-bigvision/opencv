@@ -418,7 +418,23 @@ When `sampled` is true, `matrix` stores a forward transform in image coordinates
 class CV_EXPORTS_W AugmentationOp
 {
 public:
+    struct CV_EXPORTS_W Capability
+    {
+        std::vector<String> supportedTargets;
+        bool mayMutateInput;
+
+        Capability();
+    };
+
     virtual ~AugmentationOp();
+
+    /** @brief Declares transform capability metadata.
+
+    The metadata is used by registration/dispatch utilities and by high-level
+    composition adapters (for example Python Compose/OneOf/Sometimes wrappers)
+    to validate compatibility without executing the transform.
+    */
+    virtual Capability capability() const;
 
     /** @brief Apply the operation with explicit execution context.
 
@@ -436,6 +452,10 @@ public:
     */
     virtual void apply(InputArray src, OutputArray dst, RNG& rng) const = 0;
 };
+
+CV_EXPORTS void registerTransform(const String& name, const Ptr<AugmentationOp>& op);
+CV_EXPORTS Ptr<AugmentationOp> resolveTransform(const String& name);
+CV_EXPORTS_W bool hasTransform(const String& name);
 
 /** @brief Class-style sequential augmentation pipeline.
 
@@ -462,6 +482,14 @@ public:
     @param probability Probability in [0,1] of executing this node.
     */
     CV_WRAP AugmentationPipeline& add(const String& name, const Ptr<AugmentationOp>& op, double probability = 1.0);
+
+    /** @brief Append a registered transform by name.
+
+    @param dispatchName Name of an operation previously registered via
+           cv::aug::registerTransform().
+    @param probability Probability in [0,1] of executing this node.
+    */
+    CV_WRAP AugmentationPipeline& add(const String& dispatchName, double probability);
 
     /** @brief Apply all operations using explicit RNG state.
 
