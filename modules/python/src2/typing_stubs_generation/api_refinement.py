@@ -279,6 +279,33 @@ def refine_dnn_module(root: NamespaceNode) -> None:
         return
     dnn_module = root.namespaces["dnn"]
 
+    dnn_module.add_function(
+        "NMSBoxes",
+        arguments=[
+            FunctionNode.Arg("bboxes", create_type_node("vector<Rect>")),
+            FunctionNode.Arg("scores", create_type_node("vector<float>")),
+            FunctionNode.Arg("score_threshold", PrimitiveTypeNode.float_()),
+            FunctionNode.Arg("nms_threshold", PrimitiveTypeNode.float_()),
+            FunctionNode.Arg("eta", PrimitiveTypeNode.float_(), default_value="1."),
+            FunctionNode.Arg("top_k", PrimitiveTypeNode.int_(), default_value="0")
+        ],
+        return_type=FunctionNode.RetType(create_type_node("vector<int>"))
+    )
+
+    dnn_module.add_function(
+        "NMSBoxesBatched",
+        arguments=[
+            FunctionNode.Arg("bboxes", create_type_node("vector<Rect>")),
+            FunctionNode.Arg("scores", create_type_node("vector<float>")),
+            FunctionNode.Arg("class_ids", create_type_node("vector<int>")),
+            FunctionNode.Arg("score_threshold", PrimitiveTypeNode.float_()),
+            FunctionNode.Arg("nms_threshold", PrimitiveTypeNode.float_()),
+            FunctionNode.Arg("eta", PrimitiveTypeNode.float_(), default_value="1."),
+            FunctionNode.Arg("top_k", PrimitiveTypeNode.int_(), default_value="0")
+        ],
+        return_type=FunctionNode.RetType(create_type_node("vector<int>"))
+    )
+
     """
     class LayerProtocol(Protocol):
         def __init__(
