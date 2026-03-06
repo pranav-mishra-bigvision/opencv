@@ -124,3 +124,13 @@ This split is considered stable for the initial rollout.
 - `CV_16U`: values are normalized by `1/65535` and converted back with saturation.
 - `CV_32F`: values are interpreted as normalized already; outputs are clamped to `[0,1]`.
 - `randomChannelShuffle` applies only to BGR/BGRA; grayscale is a no-op copy. For BGRA, alpha is preserved.
+
+## 11. Multi-target geometric contracts
+
+- Geometric operations sample a single transform matrix per operation invocation.
+- That sampled matrix is the authoritative transform and must be reused consistently across all related targets (image, masks, and keypoints) in the same execution step.
+- Coordinate convention for keypoints is **pixel-center coordinates** by default.
+- Keypoint policy defaults:
+  - clip transformed points to image bounds,
+  - mark keypoints invisible when transformed outside image bounds.
+- Mask policy defaults to nearest-neighbor interpolation to preserve categorical labels.

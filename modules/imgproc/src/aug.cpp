@@ -302,12 +302,24 @@ bool AugmentationReplay::empty() const
     return !impl || impl->transforms.empty();
 }
 
+AugmentationExecutionContext::MaskTargetInfo::MaskTargetInfo()
+    : interpolation(INTER_NEAREST)
+{}
+
+AugmentationExecutionContext::KeypointTargetInfo::KeypointTargetInfo()
+    : convention(COORDINATES_PIXEL_CENTERS), clipToImage(true), markInvisibleWhenOutside(true)
+{}
+
+AugmentationExecutionContext::GeometricTransformSample::GeometricTransformSample()
+    : matrix(Matx33d::eye()), sampled(false)
+{}
+
 AugmentationExecutionContext::TargetInfo::TargetInfo()
-    : size(), type(-1), channels(0)
+    : size(), type(-1), channels(0), mask(), keypoints()
 {}
 
 AugmentationExecutionContext::AugmentationExecutionContext(RNG& rng_, AugmentationReplay* replay_)
-    : rng(rng_), replay(replay_), target()
+    : rng(rng_), replay(replay_), target(), geometric()
 {}
 
 AugmentationOp::~AugmentationOp() {}
