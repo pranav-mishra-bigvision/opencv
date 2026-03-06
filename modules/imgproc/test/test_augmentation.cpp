@@ -91,4 +91,48 @@ TEST(Imgproc_Augmentation, affine_with_shear_replay)
     EXPECT_EQ(0, cv::countNonZero(out1 != out2));
 }
 
+
+TEST(Imgproc_Augmentation, color_ops_replay_and_layouts)
+{
+    cv::Mat src(24, 24, CV_16UC4);
+    cv::randu(src, 0, 65535);
+
+    cv::aug::AugmentationReplay replay;
+    cv::Mat out1, out2;
+    cv::aug::randomColorJitter(src, out1, 0.2, 0.05, 42, &replay);
+    cv::aug::randomColorJitter(src, out2, 0.2, 0.05, 7, &replay);
+
+    EXPECT_EQ(src.type(), out1.type());
+    EXPECT_EQ(0, cv::countNonZero(out1.reshape(1) != out2.reshape(1)));
+}
+
+TEST(Imgproc_Augmentation, channel_shuffle_alpha_preserved)
+{
+    cv::Mat src(12, 14, CV_8UC4);
+    cv::randu(src, 0, 255);
+
+    std::vector<cv::Mat> sch;
+    cv::split(src, sch);
+
+    cv::Mat out;
+    cv::aug::randomChannelShuffle(src, out, 1.0, 2025);
+
+    std::vector<cv::Mat> och;
+    cv::split(out, och);
+    EXPECT_EQ(0, cv::countNonZero(sch[3] != och[3]));
+}
+
+TEST(Imgproc_Augmentation, invalid_args_and_channel_layout)
+{
+    cv::Mat badCh(8, 8, CV_8UC2);
+    cv::Mat out;
+
+    EXPECT_THROW(cv::aug::randomBrightnessContrast(badCh, out, 0.1, 0.1, 1), cv::Exception);
+
+    cv::Mat src(8, 8, CV_8UC1);
+    EXPECT_THROW(cv::aug::randomFlip(src, out, -0.1, 1, 1), cv::Exception);
+    EXPECT_THROW(cv::aug::randomCrop(src, out, 0.0, 0.5, cv::Size(4, 4), cv::INTER_LINEAR, 1), cv::Exception);
+    EXPECT_THROW(cv::aug::randomBlur(src, out, -1, 1), cv::Exception);
+}
+
 } // namespace opencv_test

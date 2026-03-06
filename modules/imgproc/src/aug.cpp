@@ -4,6 +4,7 @@
 
 #include "precomp.hpp"
 
+#include <algorithm>
 #include <limits>
 #include <sstream>
 
@@ -60,6 +61,55 @@ struct WarpParams
     WarpParams(int interpolation_, int borderMode_, const Scalar& borderValue_)
         : interpolation(interpolation_), borderMode(borderMode_), borderValue(borderValue_) {}
 };
+
+static void validateAugInput(const Mat& in, const char* fn, bool enforceDepth)
+{
+    if (in.empty())
+        CV_Error(Error::StsBadArg, String(fn) + ": src must be non-empty");
+
+    const int cn = in.channels();
+    if (!(cn == 1 || cn == 3 || cn == 4))
+        CV_Error(Error::StsUnsupportedFormat, String(fn) + ": supported channel layouts are grayscale (1), BGR (3), BGRA (4)");
+
+    if (enforceDepth)
+    {
+        const int d = in.depth();
+        if (!(d == CV_8U || d == CV_16U || d == CV_32F))
+            CV_Error(Error::StsUnsupportedFormat, String(fn) + ": supported depths are CV_8U, CV_16U, CV_32F");
+    }
+}
+
+static double getDepthScale(int depth)
+{
+    if (depth == CV_8U) return 1.0 / 255.0;
+    if (depth == CV_16U) return 1.0 / 65535.0;
+    return 1.0;
+}
+
+static void clampUnit(Mat& m)
+{
+    cv::max(m, 0.0, m);
+    cv::min(m, 1.0, m);
+}
+
+static Mat toNormalizedFloat(const Mat& in)
+{
+    Mat f;
+    in.convertTo(f, CV_32F, getDepthScale(in.depth()));
+    return f;
+}
+
+static void fromNormalizedFloat(const Mat& f, int depth, OutputArray dst)
+{
+    Mat clamped = f.clone();
+    clampUnit(clamped);
+    if (depth == CV_8U)
+        clamped.convertTo(dst, CV_8U, 255.0);
+    else if (depth == CV_16U)
+        clamped.convertTo(dst, CV_16U, 65535.0);
+    else
+        clamped.convertTo(dst, CV_32F);
+}
 
 static uint64 makeGlobalSeed(uint64 seed)
 {
@@ -322,12 +372,20 @@ void randomFlip(InputArray src, OutputArray dst, double probability, int flipCod
     const uint64 globalSeed = makeGlobalSeed(seed);
     RNG rng(globalSeed);
     initReplayForWrite(replay, globalSeed);
+    if (probability < 0.0 || probability > 1.0)
+        CV_Error(Error::StsBadArg, "randomFlip: probability must be in [0,1]");
+    if (!(flipCode == -1 || flipCode == 0 || flipCode == 1))
+        CV_Error(Error::StsBadArg, "randomFlip: flipCode must be -1, 0, or 1");
+
     TransformSampler sampler(replay, "randomFlip", rng);
 
+    Mat in = src.getMat();
+    validateAugInput(in, "randomFlip", true);
+
     if (sampler.bernoulli(probability))
-        flip(src, dst, flipCode);
+        flip(in, dst, flipCode);
     else
-        src.copyTo(dst);
+        in.copyTo(dst);
 }
 
 void randomAffine(InputArray src, OutputArray dst,
@@ -389,7 +447,9 @@ void randomAffine(InputArray src, OutputArray dst,
                   AugmentationReplay* replay)
 {
     Mat in = src.getMat();
-    CV_Assert(!in.empty());
+    validateAugInput(in, "randomAffine", true);
+    if (maxScaleDelta < 0.0)
+        CV_Error(Error::StsBadArg, "randomAffine: maxScaleDelta must be non-negative");
 
     const uint64 globalSeed = makeGlobalSeed(seed);
     RNG rng(globalSeed);
@@ -428,7 +488,9 @@ void randomPerspective(InputArray src, OutputArray dst,
                        AugmentationReplay* replay)
 {
     Mat in = src.getMat();
-    CV_Assert(!in.empty());
+    validateAugInput(in, "randomPerspective", true);
+    if (maxJitterX < 0.0 || maxJitterY < 0.0)
+        CV_Error(Error::StsBadArg, "randomPerspective: max jitter must be non-negative");
 
     const uint64 globalSeed = makeGlobalSeed(seed);
     RNG rng(globalSeed);
@@ -469,8 +531,11 @@ void randomCrop(InputArray src, OutputArray dst,
                 AugmentationReplay* replay)
 {
     Mat in = src.getMat();
-    CV_Assert(!in.empty());
-    CV_Assert(dsize.width > 0 && dsize.height > 0);
+    validateAugInput(in, "randomCrop", true);
+    if (dsize.width <= 0 || dsize.height <= 0)
+        CV_Error(Error::StsBadArg, "randomCrop: dsize must be positive");
+    if (minScale <= 0.0 || maxScale <= 0.0)
+        CV_Error(Error::StsBadArg, "randomCrop: minScale and maxScale must be positive");
 
     const uint64 globalSeed = makeGlobalSeed(seed);
     RNG rng(globalSeed);
@@ -501,7 +566,10 @@ void randomPerspectiveRemap(InputArray src, OutputArray dst,
                             AugmentationReplay* replay)
 {
     Mat in = src.getMat();
-    CV_Assert(!in.empty());
+    validateAugInput(in, "randomPerspectiveRemap", true);
+
+    if (maxJitterX < 0.0 || maxJitterY < 0.0)
+        CV_Error(Error::StsBadArg, "randomPerspectiveRemap: max jitter must be non-negative");
 
     const uint64 globalSeed = makeGlobalSeed(seed);
     RNG rng(globalSeed);
@@ -521,6 +589,216 @@ void randomPerspectiveRemap(InputArray src, OutputArray dst,
 
     const Matx33d H = Matx33d(getPerspectiveTransform(dstPts, srcPts));
     applyPerspectiveRemap(in, dst, H, WarpParams(interpolation, borderMode, borderValue));
+}
+
+
+void randomBrightnessContrast(InputArray src, OutputArray dst,
+                              double maxBrightnessDelta,
+                              double maxContrastDelta,
+                              uint64 seed)
+{
+    randomBrightnessContrast(src, dst, maxBrightnessDelta, maxContrastDelta, seed, NULL);
+}
+
+void randomBrightnessContrast(InputArray src, OutputArray dst,
+                              double maxBrightnessDelta,
+                              double maxContrastDelta,
+                              uint64 seed,
+                              AugmentationReplay* replay)
+{
+    if (maxBrightnessDelta < 0.0 || maxContrastDelta < 0.0)
+        CV_Error(Error::StsBadArg, "randomBrightnessContrast: max deltas must be non-negative");
+    Mat in = src.getMat();
+    validateAugInput(in, "randomBrightnessContrast", true);
+
+    const uint64 globalSeed = makeGlobalSeed(seed);
+    RNG rng(globalSeed);
+    initReplayForWrite(replay, globalSeed);
+    TransformSampler sampler(replay, "randomBrightnessContrast", rng);
+
+    const double brightness = sampler.symmetric(maxBrightnessDelta);
+    const double contrast = std::max(0.0, 1.0 + sampler.symmetric(maxContrastDelta));
+
+    Mat f = toNormalizedFloat(in);
+    std::vector<Mat> ch;
+    split(f, ch);
+    const int workCn = (in.channels() == 4) ? 3 : in.channels();
+    for (int i = 0; i < workCn; ++i)
+        ch[i] = (ch[i] - 0.5f) * contrast + (0.5f + brightness);
+    merge(ch, f);
+    fromNormalizedFloat(f, in.depth(), dst);
+}
+
+void randomGamma(InputArray src, OutputArray dst, double maxGammaDelta, uint64 seed)
+{
+    randomGamma(src, dst, maxGammaDelta, seed, NULL);
+}
+
+void randomGamma(InputArray src, OutputArray dst, double maxGammaDelta, uint64 seed, AugmentationReplay* replay)
+{
+    if (maxGammaDelta < 0.0)
+        CV_Error(Error::StsBadArg, "randomGamma: maxGammaDelta must be non-negative");
+    Mat in = src.getMat();
+    validateAugInput(in, "randomGamma", true);
+
+    const uint64 globalSeed = makeGlobalSeed(seed);
+    RNG rng(globalSeed);
+    initReplayForWrite(replay, globalSeed);
+    TransformSampler sampler(replay, "randomGamma", rng);
+
+    const float gamma = static_cast<float>(std::max(1e-6, 1.0 + sampler.symmetric(maxGammaDelta)));
+    Mat f = toNormalizedFloat(in);
+    std::vector<Mat> ch;
+    split(f, ch);
+    const int workCn = (in.channels() == 4) ? 3 : in.channels();
+    for (int i = 0; i < workCn; ++i)
+        cv::pow(ch[i], gamma, ch[i]);
+    merge(ch, f);
+    fromNormalizedFloat(f, in.depth(), dst);
+}
+
+void randomColorJitter(InputArray src, OutputArray dst,
+                       double maxScaleDelta,
+                       double maxBiasDelta,
+                       uint64 seed)
+{
+    randomColorJitter(src, dst, maxScaleDelta, maxBiasDelta, seed, NULL);
+}
+
+void randomColorJitter(InputArray src, OutputArray dst,
+                       double maxScaleDelta,
+                       double maxBiasDelta,
+                       uint64 seed,
+                       AugmentationReplay* replay)
+{
+    if (maxScaleDelta < 0.0 || maxBiasDelta < 0.0)
+        CV_Error(Error::StsBadArg, "randomColorJitter: max deltas must be non-negative");
+    Mat in = src.getMat();
+    validateAugInput(in, "randomColorJitter", true);
+
+    const uint64 globalSeed = makeGlobalSeed(seed);
+    RNG rng(globalSeed);
+    initReplayForWrite(replay, globalSeed);
+    TransformSampler sampler(replay, "randomColorJitter", rng);
+
+    Mat f = toNormalizedFloat(in);
+    std::vector<Mat> ch;
+    split(f, ch);
+    const int workCn = (in.channels() == 4) ? 3 : in.channels();
+    for (int i = 0; i < workCn; ++i)
+    {
+        const float scale = static_cast<float>(std::max(0.0, 1.0 + sampler.symmetric(maxScaleDelta)));
+        const float bias = static_cast<float>(sampler.symmetric(maxBiasDelta));
+        ch[i] = ch[i] * scale + bias;
+    }
+    merge(ch, f);
+    fromNormalizedFloat(f, in.depth(), dst);
+}
+
+void randomGaussianNoise(InputArray src, OutputArray dst, double maxStdDev, uint64 seed)
+{
+    randomGaussianNoise(src, dst, maxStdDev, seed, NULL);
+}
+
+void randomGaussianNoise(InputArray src, OutputArray dst, double maxStdDev, uint64 seed, AugmentationReplay* replay)
+{
+    if (maxStdDev < 0.0)
+        CV_Error(Error::StsBadArg, "randomGaussianNoise: maxStdDev must be non-negative");
+    Mat in = src.getMat();
+    validateAugInput(in, "randomGaussianNoise", true);
+
+    const uint64 globalSeed = makeGlobalSeed(seed);
+    RNG rng(globalSeed);
+    initReplayForWrite(replay, globalSeed);
+    TransformSampler sampler(replay, "randomGaussianNoise", rng);
+
+    const double stddev = sampler.sampleUnit() * maxStdDev;
+    const uint64 noiseSeed = static_cast<uint64>(sampler.sampleUnit() * static_cast<double>(std::numeric_limits<uint64>::max()));
+    RNG noiseRng(noiseSeed);
+
+    Mat f = toNormalizedFloat(in);
+    Mat n(f.size(), f.type());
+    noiseRng.fill(n, RNG::NORMAL, Scalar::all(0), Scalar::all(stddev));
+    if (in.channels() == 4)
+    {
+        std::vector<Mat> fc, nc;
+        split(f, fc);
+        split(n, nc);
+        for (int i = 0; i < 3; ++i)
+            fc[i] += nc[i];
+        merge(fc, f);
+    }
+    else
+    {
+        f += n;
+    }
+    fromNormalizedFloat(f, in.depth(), dst);
+}
+
+void randomBlur(InputArray src, OutputArray dst, int maxKernelRadius, uint64 seed)
+{
+    randomBlur(src, dst, maxKernelRadius, seed, NULL);
+}
+
+void randomBlur(InputArray src, OutputArray dst, int maxKernelRadius, uint64 seed, AugmentationReplay* replay)
+{
+    if (maxKernelRadius < 0)
+        CV_Error(Error::StsBadArg, "randomBlur: maxKernelRadius must be non-negative");
+    Mat in = src.getMat();
+    validateAugInput(in, "randomBlur", true);
+
+    const uint64 globalSeed = makeGlobalSeed(seed);
+    RNG rng(globalSeed);
+    initReplayForWrite(replay, globalSeed);
+    TransformSampler sampler(replay, "randomBlur", rng);
+
+    const int radius = (maxKernelRadius > 0) ? cvFloor(sampler.sampleUnit() * (maxKernelRadius + 1)) : 0;
+    const int ksize = radius * 2 + 1;
+    if (ksize <= 1)
+    {
+        in.copyTo(dst);
+        return;
+    }
+    GaussianBlur(in, dst, Size(ksize, ksize), 0.0, 0.0, BORDER_REFLECT_101);
+}
+
+void randomChannelShuffle(InputArray src, OutputArray dst, double probability, uint64 seed)
+{
+    randomChannelShuffle(src, dst, probability, seed, NULL);
+}
+
+void randomChannelShuffle(InputArray src, OutputArray dst, double probability, uint64 seed, AugmentationReplay* replay)
+{
+    if (probability < 0.0 || probability > 1.0)
+        CV_Error(Error::StsBadArg, "randomChannelShuffle: probability must be in [0,1]");
+    Mat in = src.getMat();
+    validateAugInput(in, "randomChannelShuffle", true);
+
+    const uint64 globalSeed = makeGlobalSeed(seed);
+    RNG rng(globalSeed);
+    initReplayForWrite(replay, globalSeed);
+    TransformSampler sampler(replay, "randomChannelShuffle", rng);
+
+    if (in.channels() == 1 || !sampler.bernoulli(probability))
+    {
+        in.copyTo(dst);
+        return;
+    }
+
+    static const int perms[6][3] = {
+        {0,1,2}, {0,2,1}, {1,0,2}, {1,2,0}, {2,0,1}, {2,1,0}
+    };
+    const int permId = std::min(5, cvFloor(sampler.sampleUnit() * 6.0));
+
+    std::vector<Mat> ch;
+    split(in, ch);
+    std::vector<Mat> out(ch.size());
+    for (size_t i = 0; i < ch.size(); ++i)
+        out[i] = ch[i];
+    out[0] = ch[perms[permId][0]];
+    out[1] = ch[perms[permId][1]];
+    out[2] = ch[perms[permId][2]];
+    merge(out, dst);
 }
 
 } // namespace aug
