@@ -18,6 +18,14 @@ public:
         cv::add(in, cv::Scalar::all(value_), dst);
     }
 
+    cv::aug::AugmentationOp::Capability capability() const CV_OVERRIDE
+    {
+        cv::aug::AugmentationOp::Capability caps;
+        caps.supportedTargets.push_back("mask");
+        caps.mayMutateInput = true;
+        return caps;
+    }
+
 private:
     int value_;
 };
@@ -294,6 +302,33 @@ TEST(Imgproc_Augmentation, execution_context_target_defaults)
 
     EXPECT_FALSE(ctx.geometric.sampled);
     EXPECT_EQ(cv::Matx33d::eye(), ctx.geometric.matrix);
+}
+
+
+TEST(Imgproc_Augmentation, registry_dispatch_and_capability)
+{
+    cv::Ptr<cv::aug::AugmentationOp> op = cv::makePtr<AddValueOp>(4);
+    cv::aug::registerTransform("add4", op);
+
+    EXPECT_TRUE(cv::aug::hasTransform("add4"));
+    EXPECT_FALSE(cv::aug::hasTransform("missing_transform"));
+
+    cv::Ptr<cv::aug::AugmentationOp> resolved = cv::aug::resolveTransform("add4");
+    ASSERT_FALSE(resolved.empty());
+
+    const cv::aug::AugmentationOp::Capability caps = resolved->capability();
+    EXPECT_TRUE(caps.mayMutateInput);
+    ASSERT_EQ(2u, caps.supportedTargets.size());
+    EXPECT_EQ(std::string("image"), std::string(caps.supportedTargets[0]));
+    EXPECT_EQ(std::string("mask"), std::string(caps.supportedTargets[1]));
+
+    cv::Mat src(4, 4, CV_8UC1, cv::Scalar(7));
+    cv::aug::AugmentationPipeline p;
+    p.add("add4", 1.0);
+
+    cv::Mat out;
+    p.apply(src, out, 1);
+    EXPECT_EQ(0, cv::countNonZero(out != cv::Scalar(11)));
 }
 
 } // namespace opencv_test

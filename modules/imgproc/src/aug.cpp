@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <limits>
+#include <map>
+#include <mutex>
 #include <sstream>
 
 namespace cv {
@@ -111,6 +113,18 @@ static void fromNormalizedFloat(const Mat& f, int depth, OutputArray dst)
         clamped.convertTo(dst, CV_32F);
 }
 
+
+struct TransformRegistry
+{
+    std::mutex mtx;
+    std::map<String, Ptr<AugmentationOp> > ops;
+};
+
+static TransformRegistry& getTransformRegistry()
+{
+    static TransformRegistry registry;
+    return registry;
+}
 static uint64 makeGlobalSeed(uint64 seed)
 {
     if (seed != 0)
@@ -322,11 +336,56 @@ AugmentationExecutionContext::AugmentationExecutionContext(RNG& rng_, Augmentati
     : rng(rng_), replay(replay_), target(), geometric()
 {}
 
+AugmentationOp::Capability::Capability()
+    : supportedTargets(), mayMutateInput(false)
+{}
+
 AugmentationOp::~AugmentationOp() {}
+
+AugmentationOp::Capability AugmentationOp::capability() const
+{
+    Capability caps;
+    caps.supportedTargets.push_back("image");
+    return caps;
+}
 
 void AugmentationOp::apply(InputArray src, OutputArray dst, AugmentationExecutionContext& ctx) const
 {
     apply(src, dst, ctx.rng);
+}
+
+void registerTransform(const String& name, const Ptr<AugmentationOp>& op)
+{
+    if (name.empty())
+        CV_Error(Error::StsBadArg, "registerTransform: name must be non-empty");
+    CV_Assert(!op.empty());
+
+    TransformRegistry& registry = getTransformRegistry();
+    std::lock_guard<std::mutex> lock(registry.mtx);
+    registry.ops[name] = op;
+}
+
+Ptr<AugmentationOp> resolveTransform(const String& name)
+{
+    if (name.empty())
+        CV_Error(Error::StsBadArg, "resolveTransform: name must be non-empty");
+
+    TransformRegistry& registry = getTransformRegistry();
+    std::lock_guard<std::mutex> lock(registry.mtx);
+    std::map<String, Ptr<AugmentationOp> >::const_iterator it = registry.ops.find(name);
+    if (it == registry.ops.end())
+        CV_Error(Error::StsObjectNotFound, "resolveTransform: unknown transform name: " + name);
+    return it->second;
+}
+
+bool hasTransform(const String& name)
+{
+    if (name.empty())
+        return false;
+
+    TransformRegistry& registry = getTransformRegistry();
+    std::lock_guard<std::mutex> lock(registry.mtx);
+    return registry.ops.find(name) != registry.ops.end();
 }
 
 struct AugmentationPipeline::Impl
@@ -368,6 +427,11 @@ AugmentationPipeline& AugmentationPipeline::add(const String& name, const Ptr<Au
     node.probability = probability;
     impl->ops.push_back(node);
     return *this;
+}
+
+AugmentationPipeline& AugmentationPipeline::add(const String& dispatchName, double probability)
+{
+    return add(dispatchName, resolveTransform(dispatchName), probability);
 }
 
 void AugmentationPipeline::apply(InputArray src, OutputArray dst, RNG& rng) const
