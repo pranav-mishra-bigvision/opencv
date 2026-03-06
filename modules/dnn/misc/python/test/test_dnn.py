@@ -373,6 +373,41 @@ class dnn_test(NewOpenCVTests):
 
         self.assertTrue(all(cv.dnn.NMSBoxes(rects, confs, 0, 0.6).ravel() == (0, 1)))
 
+    def test_nms_deterministic(self):
+        bboxes = [(0, 0, 10, 10), (1, 1, 9, 9), (30, 30, 5, 5)]
+        scores = [0.95, 0.9, 0.85]
+
+        first = cv.dnn.NMSBoxes(bboxes=bboxes, scores=scores, score_threshold=0.0, nms_threshold=0.5, eta=1.0, top_k=0)
+        second = cv.dnn.NMSBoxes(bboxes=bboxes, scores=scores, score_threshold=0.0, nms_threshold=0.5, eta=1.0, top_k=0)
+
+        self.assertTrue(np.array_equal(np.asarray(first), np.asarray(second)))
+
+    def test_nms_multi_target_consistency(self):
+        bboxes = [(0, 0, 10, 10), (1, 1, 9, 9), (30, 30, 5, 5)]
+        scores = [0.95, 0.9, 0.85]
+
+        rect_indices = cv.dnn.NMSBoxes(bboxes, scores, 0.0, 0.5)
+        rect2d_indices = cv.dnn.NMSBoxes([(float(x), float(y), float(w), float(h)) for x, y, w, h in bboxes],
+                                         scores, 0.0, 0.5)
+        self.assertTrue(np.array_equal(np.asarray(rect_indices), np.asarray(rect2d_indices)))
+
+        class_ids = [0, 0, 1]
+        batched_rect_indices = cv.dnn.NMSBoxesBatched(bboxes, scores, class_ids, 0.0, 0.5)
+        batched_rect2d_indices = cv.dnn.NMSBoxesBatched([(float(x), float(y), float(w), float(h)) for x, y, w, h in bboxes],
+                                                        scores, class_ids, 0.0, 0.5)
+        self.assertTrue(np.array_equal(np.asarray(batched_rect_indices), np.asarray(batched_rect2d_indices)))
+
+    def test_nms_dtype_correctness(self):
+        bboxes = np.array([[0.0, 0.0, 10.0, 10.0], [1.0, 1.0, 9.0, 9.0], [30.0, 30.0, 5.0, 5.0]], dtype=np.float32)
+        scores = np.array([0.95, 0.9, 0.85], dtype=np.float32)
+
+        indices = cv.dnn.NMSBoxes(bboxes.tolist(), scores.tolist(), 0.0, 0.5)
+        self.assertTrue(np.issubdtype(np.asarray(indices).dtype, np.integer))
+
+        updated_scores, soft_indices = cv.dnn.softNMSBoxes(bboxes.tolist(), scores.tolist(), 0.0, 0.5)
+        self.assertEqual(np.asarray(updated_scores).dtype, np.float32)
+        self.assertTrue(np.issubdtype(np.asarray(soft_indices).dtype, np.integer))
+
     def test_custom_layer(self):
         class CropLayer(object):
             def __init__(self, params, blobs):
