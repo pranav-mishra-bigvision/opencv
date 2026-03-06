@@ -349,10 +349,37 @@ public:
 
 Implementations are expected to be immutable configuration objects.
 */
+class CV_EXPORTS_W AugmentationExecutionContext
+{
+public:
+    struct CV_EXPORTS_W TargetInfo
+    {
+        Size size;
+        int type;
+        int channels;
+
+        TargetInfo();
+    };
+
+    AugmentationExecutionContext(RNG& rng, AugmentationReplay* replay = NULL);
+
+    RNG& rng;
+    AugmentationReplay* replay;
+    TargetInfo target;
+};
+
 class CV_EXPORTS_W AugmentationOp
 {
 public:
     virtual ~AugmentationOp();
+
+    /** @brief Apply the operation with explicit execution context.
+
+    @param src Source image.
+    @param dst Destination image.
+    @param ctx Execution context carrying RNG, replay data, and target metadata.
+    */
+    virtual void apply(InputArray src, OutputArray dst, AugmentationExecutionContext& ctx) const;
 
     /** @brief Apply the operation with explicit RNG state.
 
@@ -379,6 +406,16 @@ public:
     */
     CV_WRAP AugmentationPipeline& add(const Ptr<AugmentationOp>& op);
 
+    /** @brief Append a named operation node with per-node probability.
+
+    The probability is sampled exactly once per node during pipeline execution.
+
+    @param name Stable node name used for replay record matching.
+    @param op Shared operation instance.
+    @param probability Probability in [0,1] of executing this node.
+    */
+    CV_WRAP AugmentationPipeline& add(const String& name, const Ptr<AugmentationOp>& op, double probability = 1.0);
+
     /** @brief Apply all operations using explicit RNG state.
 
     @param src Source image.
@@ -388,6 +425,8 @@ public:
     CV_WRAP void apply(InputArray src, OutputArray dst, RNG& rng) const;
 
     CV_EXPORTS void apply(InputArray src, OutputArray dst, RNG& rng, AugmentationReplay* replay) const;
+
+    CV_EXPORTS void apply(InputArray src, OutputArray dst, AugmentationExecutionContext& ctx) const;
 
     /** @brief Apply all operations using optional deterministic seed.
 

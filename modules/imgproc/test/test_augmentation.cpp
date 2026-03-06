@@ -7,6 +7,21 @@
 
 namespace opencv_test {
 
+class AddValueOp : public cv::aug::AugmentationOp
+{
+public:
+    explicit AddValueOp(int value) : value_(value) {}
+
+    void apply(cv::InputArray src, cv::OutputArray dst, cv::RNG&) const CV_OVERRIDE
+    {
+        cv::Mat in = src.getMat();
+        cv::add(in, cv::Scalar::all(value_), dst);
+    }
+
+private:
+    int value_;
+};
+
 TEST(Imgproc_Augmentation, replay_randomFlip)
 {
     cv::Mat src(16, 16, CV_8UC1);
@@ -133,6 +148,34 @@ TEST(Imgproc_Augmentation, invalid_args_and_channel_layout)
     EXPECT_THROW(cv::aug::randomFlip(src, out, -0.1, 1, 1), cv::Exception);
     EXPECT_THROW(cv::aug::randomCrop(src, out, 0.0, 0.5, cv::Size(4, 4), cv::INTER_LINEAR, 1), cv::Exception);
     EXPECT_THROW(cv::aug::randomBlur(src, out, -1, 1), cv::Exception);
+}
+
+TEST(Imgproc_Augmentation, pipeline_replay_probability_and_order)
+{
+    cv::Mat src(8, 8, CV_8UC1, cv::Scalar(10));
+
+    cv::aug::AugmentationPipeline p;
+    p.add("always_add_3", cv::makePtr<AddValueOp>(3), 1.0);
+    p.add("never_add_100", cv::makePtr<AddValueOp>(100), 0.0);
+    p.add("always_add_5", cv::makePtr<AddValueOp>(5), 1.0);
+
+    cv::aug::AugmentationReplay replay;
+    cv::Mat out1, out2;
+    p.apply(src, out1, 1234, &replay);
+    p.apply(src, out2, 9876, &replay);
+
+    EXPECT_EQ(0, cv::countNonZero(out1 != out2));
+    EXPECT_EQ(0, cv::countNonZero(out1 != cv::Scalar(18)));
+}
+
+TEST(Imgproc_Augmentation, pipeline_add_named_validation)
+{
+    cv::aug::AugmentationPipeline p;
+    cv::Ptr<cv::aug::AugmentationOp> op = cv::makePtr<AddValueOp>(1);
+
+    EXPECT_THROW(p.add("", op, 1.0), cv::Exception);
+    EXPECT_THROW(p.add("bad_probability", op, -0.1), cv::Exception);
+    EXPECT_THROW(p.add("bad_probability", op, 1.1), cv::Exception);
 }
 
 } // namespace opencv_test
