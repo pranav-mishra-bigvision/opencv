@@ -178,4 +178,107 @@ TEST(Imgproc_Augmentation, pipeline_add_named_validation)
     EXPECT_THROW(p.add("bad_probability", op, 1.1), cv::Exception);
 }
 
+TEST(Imgproc_Augmentation, geometric_accuracy_on_known_fixtures)
+{
+    cv::Mat src = (cv::Mat_<uchar>(3, 3) <<
+                   1, 2, 3,
+                   4, 5, 6,
+                   7, 8, 9);
+
+    cv::Mat flipped;
+    cv::aug::randomFlip(src, flipped, 1.0, 1, 7);
+
+    cv::Mat expectedFlip = (cv::Mat_<uchar>(3, 3) <<
+                            3, 2, 1,
+                            6, 5, 4,
+                            9, 8, 7);
+    EXPECT_EQ(0, cv::countNonZero(flipped != expectedFlip));
+
+    cv::Mat perspective;
+    cv::aug::randomPerspective(src, perspective, 0.0, 0.0, cv::INTER_NEAREST,
+                               cv::BORDER_CONSTANT, cv::Scalar(), 11);
+    EXPECT_EQ(0, cv::countNonZero(src != perspective));
+
+    cv::Mat crop;
+    cv::aug::randomCrop(src, crop, 1.0, 1.0, src.size(), cv::INTER_NEAREST, 5);
+    EXPECT_EQ(0, cv::countNonZero(src != crop));
+}
+
+TEST(Imgproc_Augmentation, photometric_bounds_and_type_behavior)
+{
+    cv::Mat src8(8, 8, CV_8UC3, cv::Scalar(250, 5, 125));
+    cv::Mat dst8;
+    cv::aug::randomBrightnessContrast(src8, dst8, 2.0, 2.0, 10);
+    EXPECT_EQ(src8.type(), dst8.type());
+    double min8 = 0.0;
+    double max8 = 0.0;
+    cv::minMaxLoc(dst8.reshape(1), &min8, &max8);
+    EXPECT_GE(min8, 0.0);
+    EXPECT_LE(max8, 255.0);
+
+    cv::Mat src16(8, 8, CV_16UC1, cv::Scalar(65535));
+    cv::Mat dst16;
+    cv::aug::randomColorJitter(src16, dst16, 2.0, 2.0, 20);
+    EXPECT_EQ(src16.type(), dst16.type());
+    double min16 = 0.0;
+    double max16 = 0.0;
+    cv::minMaxLoc(dst16, &min16, &max16);
+    EXPECT_GE(min16, 0.0);
+    EXPECT_LE(max16, 65535.0);
+
+    cv::Mat src32(8, 8, CV_32FC1, cv::Scalar(0.75f));
+    cv::Mat dst32;
+    cv::aug::randomGamma(src32, dst32, 3.0, 30);
+    EXPECT_EQ(src32.type(), dst32.type());
+    double min32 = 0.0;
+    double max32 = 0.0;
+    cv::minMaxLoc(dst32, &min32, &max32);
+    EXPECT_GE(min32, 0.0);
+    EXPECT_LE(max32, 1.0);
+}
+
+TEST(Imgproc_Augmentation, compose_probability_semantics)
+{
+    cv::Mat src(4, 4, CV_8UC1, cv::Scalar(10));
+
+    cv::aug::AugmentationPipeline p;
+    p.add("always_add_1", cv::makePtr<AddValueOp>(1), 1.0);
+    p.add("never_add_50", cv::makePtr<AddValueOp>(50), 0.0);
+    p.add("always_add_2", cv::makePtr<AddValueOp>(2), 1.0);
+
+    cv::Mat out;
+    p.apply(src, out, 123);
+
+    EXPECT_EQ(0, cv::countNonZero(out != cv::Scalar(13)));
+}
+
+TEST(Imgproc_Augmentation, seeded_determinism_and_replay_roundtrip)
+{
+    cv::Mat src(16, 16, CV_8UC3);
+    cv::randu(src, 0, 255);
+
+    cv::Mat outA1, outA2;
+    cv::aug::randomColorJitter(src, outA1, 0.3, 0.1, 424242);
+    cv::aug::randomColorJitter(src, outA2, 0.3, 0.1, 424242);
+    EXPECT_EQ(0, cv::countNonZero(outA1.reshape(1) != outA2.reshape(1)));
+
+    cv::aug::AugmentationReplay replayWrite;
+    cv::Mat replayOut1;
+    cv::aug::randomAffine(src, replayOut1, 15.0, 2.0, 2.0, 0.1,
+                          cv::INTER_LINEAR, cv::BORDER_REFLECT_101, cv::Scalar(), 2024, &replayWrite);
+
+    cv::FileStorage fs("", cv::FileStorage::WRITE | cv::FileStorage::MEMORY);
+    fs << "replay" << replayWrite;
+    const cv::String serialized = fs.releaseAndGetString();
+
+    cv::FileStorage fsRead(serialized, cv::FileStorage::READ | cv::FileStorage::MEMORY);
+    cv::aug::AugmentationReplay replayRead;
+    fsRead["replay"] >> replayRead;
+
+    cv::Mat replayOut2;
+    cv::aug::randomAffine(src, replayOut2, 15.0, 2.0, 2.0, 0.1,
+                          cv::INTER_LINEAR, cv::BORDER_REFLECT_101, cv::Scalar(), 999999, &replayRead);
+    EXPECT_EQ(0, cv::countNonZero(replayOut1.reshape(1) != replayOut2.reshape(1)));
+}
+
 } // namespace opencv_test
