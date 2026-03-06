@@ -189,6 +189,7 @@ This module offers a comprehensive suite of image processing functions, enabling
     @defgroup imgproc_motion Motion Analysis and Object Tracking
     @defgroup imgproc_feature Feature Detection
     @defgroup imgproc_object Object Detection
+    @defgroup imgproc_aug Image Augmentation
     @defgroup imgproc_segmentation Image Segmentation
     @defgroup imgproc_hal Hardware Acceleration Layer
     @{
@@ -5236,6 +5237,7 @@ Point LineIterator::pos() const
 } // cv
 
 
+#include "./imgproc/aug.hpp"
 #include "./imgproc/segmentation.hpp"
 
 
