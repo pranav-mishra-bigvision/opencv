@@ -302,11 +302,34 @@ bool AugmentationReplay::empty() const
     return !impl || impl->transforms.empty();
 }
 
+AugmentationExecutionContext::TargetInfo::TargetInfo()
+    : size(), type(-1), channels(0)
+{}
+
+AugmentationExecutionContext::AugmentationExecutionContext(RNG& rng_, AugmentationReplay* replay_)
+    : rng(rng_), replay(replay_), target()
+{}
+
 AugmentationOp::~AugmentationOp() {}
+
+void AugmentationOp::apply(InputArray src, OutputArray dst, AugmentationExecutionContext& ctx) const
+{
+    apply(src, dst, ctx.rng);
+}
 
 struct AugmentationPipeline::Impl
 {
-    std::vector<Ptr<AugmentationOp> > ops;
+    struct Node
+    {
+        String name;
+        Ptr<AugmentationOp> op;
+        double probability;
+    };
+
+    std::vector<Node> ops;
+    size_t autoNodeCounter;
+
+    Impl() : autoNodeCounter(0) {}
 };
 
 AugmentationPipeline::AugmentationPipeline() : impl(makePtr<Impl>()) {}
@@ -314,35 +337,66 @@ AugmentationPipeline::~AugmentationPipeline() {}
 
 AugmentationPipeline& AugmentationPipeline::add(const Ptr<AugmentationOp>& op)
 {
+    std::ostringstream ss;
+    ss << "pipeline_op_" << impl->autoNodeCounter++;
+    return add(String(ss.str()), op, 1.0);
+}
+
+AugmentationPipeline& AugmentationPipeline::add(const String& name, const Ptr<AugmentationOp>& op, double probability)
+{
     CV_Assert(!op.empty());
-    impl->ops.push_back(op);
+    if (name.empty())
+        CV_Error(Error::StsBadArg, "AugmentationPipeline::add: name must be non-empty");
+    if (probability < 0.0 || probability > 1.0)
+        CV_Error(Error::StsBadArg, "AugmentationPipeline::add: probability must be in [0,1]");
+
+    Impl::Node node;
+    node.name = name;
+    node.op = op;
+    node.probability = probability;
+    impl->ops.push_back(node);
     return *this;
 }
 
 void AugmentationPipeline::apply(InputArray src, OutputArray dst, RNG& rng) const
 {
-    apply(src, dst, rng, NULL);
+    AugmentationExecutionContext ctx(rng, NULL);
+    apply(src, dst, ctx);
 }
 
 void AugmentationPipeline::apply(InputArray src, OutputArray dst, RNG& rng, AugmentationReplay* replay) const
+{
+    AugmentationExecutionContext ctx(rng, replay);
+    apply(src, dst, ctx);
+}
+
+void AugmentationPipeline::apply(InputArray src, OutputArray dst, AugmentationExecutionContext& ctx) const
 {
     Mat in = src.getMat();
     Mat current = in;
     Mat tmp;
 
-    initReplayForWrite(replay, 0);
+    ctx.target.size = in.size();
+    ctx.target.type = in.type();
+    ctx.target.channels = in.channels();
+
+    initReplayForWrite(ctx.replay, 0);
 
     for (size_t i = 0; i < impl->ops.size(); ++i)
     {
-        std::ostringstream ss;
-        ss << "pipeline_op_" << i;
-        TransformSampler sampler(replay, String(ss.str()), rng);
+        const Impl::Node& node = impl->ops[i];
+        TransformSampler sampler(ctx.replay, node.name, ctx.rng);
+
+        if (!sampler.bernoulli(node.probability))
+            continue;
 
         const double s = sampler.sampleUnit();
         const uint64 childSeed = static_cast<uint64>(s * static_cast<double>(std::numeric_limits<uint64>::max()));
         RNG childRng(childSeed);
+        AugmentationExecutionContext childCtx(childRng, ctx.replay);
+        childCtx.target = ctx.target;
 
-        impl->ops[i]->apply(current, tmp, childRng);
+        node.op->apply(current, tmp, childCtx);
         current = tmp;
     }
 
