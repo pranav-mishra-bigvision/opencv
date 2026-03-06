@@ -281,4 +281,20 @@ TEST(Imgproc_Augmentation, seeded_determinism_and_replay_roundtrip)
     EXPECT_EQ(0, cv::countNonZero(replayOut1.reshape(1) != replayOut2.reshape(1)));
 }
 
+TEST(Imgproc_Augmentation, execution_context_target_defaults)
+{
+    cv::RNG rng(123);
+    cv::aug::AugmentationExecutionContext ctx(rng, NULL);
+
+    EXPECT_EQ(cv::INTER_NEAREST, ctx.target.mask.interpolation);
+    EXPECT_EQ(static_cast<int>(cv::aug::AugmentationExecutionContext::COORDINATES_PIXEL_CENTERS),
+              static_cast<int>(ctx.target.keypoints.convention));
+    EXPECT_TRUE(ctx.target.keypoints.clipToImage);
+    EXPECT_TRUE(ctx.target.keypoints.markInvisibleWhenOutside);
+
+    EXPECT_FALSE(ctx.geometric.sampled);
+    EXPECT_EQ(cv::Matx33d::eye(), ctx.geometric.matrix);
+}
+
 } // namespace opencv_test
+

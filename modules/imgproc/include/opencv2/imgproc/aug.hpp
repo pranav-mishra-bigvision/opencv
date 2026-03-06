@@ -352,11 +352,57 @@ Implementations are expected to be immutable configuration objects.
 class CV_EXPORTS_W AugmentationExecutionContext
 {
 public:
+    enum CV_EXPORTS_W CoordinateConvention
+    {
+        COORDINATES_PIXEL_CENTERS = 0,
+        COORDINATES_PIXEL_CORNERS = 1
+    };
+
+    /** @brief Mask target policy.
+
+Masks default to nearest-neighbor interpolation to preserve label integrity.
+*/
+    struct CV_EXPORTS_W MaskTargetInfo
+    {
+        int interpolation;
+
+        MaskTargetInfo();
+    };
+
+    /** @brief Keypoint target policy.
+
+By default keypoints use pixel-center coordinates, are clipped to the image extent,
+and are marked invisible when transformed outside the image.
+*/
+    struct CV_EXPORTS_W KeypointTargetInfo
+    {
+        CoordinateConvention convention;
+        bool clipToImage;
+        bool markInvisibleWhenOutside;
+
+        KeypointTargetInfo();
+    };
+
+    /** @brief One sampled geometric transform shared across image-associated targets.
+
+When `sampled` is true, `matrix` stores a forward transform in image coordinates
+(from source to destination) and should be reused for image/mask/keypoint targets.
+*/
+    struct CV_EXPORTS_W GeometricTransformSample
+    {
+        Matx33d matrix;
+        bool sampled;
+
+        GeometricTransformSample();
+    };
+
     struct CV_EXPORTS_W TargetInfo
     {
         Size size;
         int type;
         int channels;
+        MaskTargetInfo mask;
+        KeypointTargetInfo keypoints;
 
         TargetInfo();
     };
@@ -366,6 +412,7 @@ public:
     RNG& rng;
     AugmentationReplay* replay;
     TargetInfo target;
+    GeometricTransformSample geometric;
 };
 
 class CV_EXPORTS_W AugmentationOp
