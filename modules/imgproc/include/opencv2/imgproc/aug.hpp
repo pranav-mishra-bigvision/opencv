@@ -80,6 +80,98 @@ CV_EXPORTS void randomAffine(
         uint64 seed,
         AugmentationReplay* replay);
 
+CV_EXPORTS void randomAffine(
+        InputArray src,
+        OutputArray dst,
+        double maxRotateDeg,
+        double maxTranslateX,
+        double maxTranslateY,
+        double maxScaleDelta,
+        double maxShearX,
+        double maxShearY,
+        int interpolation,
+        int borderMode,
+        const Scalar& borderValue,
+        uint64 seed,
+        AugmentationReplay* replay);
+
+CV_EXPORTS void randomPerspectiveRemap(
+        InputArray src,
+        OutputArray dst,
+        double maxJitterX,
+        double maxJitterY,
+        int interpolation,
+        int borderMode,
+        const Scalar& borderValue,
+        uint64 seed,
+        AugmentationReplay* replay);
+
+/** @brief Function-style randomized perspective transform.
+
+Builds a quadrilateral by jittering each source-image corner and warps it to the original image
+extent.
+
+@param src Source image.
+@param dst Destination image.
+@param maxJitterX Inclusive upper bound for absolute horizontal corner jitter in pixels.
+@param maxJitterY Inclusive upper bound for absolute vertical corner jitter in pixels.
+@param interpolation Interpolation mode (InterpolationFlags).
+@param borderMode Border mode (BorderTypes).
+@param borderValue Border value used with BORDER_CONSTANT.
+@param seed Optional deterministic seed. Use 0 for implementation-defined non-deterministic seeding.
+*/
+CV_EXPORTS_W void randomPerspective(
+        InputArray src,
+        OutputArray dst,
+        double maxJitterX,
+        double maxJitterY,
+        int interpolation = INTER_LINEAR,
+        int borderMode = BORDER_REFLECT_101,
+        const Scalar& borderValue = Scalar(),
+        uint64 seed = 0);
+
+CV_EXPORTS void randomPerspective(
+        InputArray src,
+        OutputArray dst,
+        double maxJitterX,
+        double maxJitterY,
+        int interpolation,
+        int borderMode,
+        const Scalar& borderValue,
+        uint64 seed,
+        AugmentationReplay* replay);
+
+/** @brief Function-style randomized crop followed by resize.
+
+The crop size is sampled as a fraction of source size and then resized to @p dsize.
+
+@param src Source image.
+@param dst Destination image.
+@param minScale Minimal sampled crop scale relative to source side lengths.
+@param maxScale Maximal sampled crop scale relative to source side lengths.
+@param dsize Resize destination size.
+@param interpolation Interpolation mode used by cv::resize.
+@param seed Optional deterministic seed. Use 0 for implementation-defined non-deterministic seeding.
+*/
+CV_EXPORTS_W void randomCrop(
+        InputArray src,
+        OutputArray dst,
+        double minScale,
+        double maxScale,
+        Size dsize,
+        int interpolation = INTER_LINEAR,
+        uint64 seed = 0);
+
+CV_EXPORTS void randomCrop(
+        InputArray src,
+        OutputArray dst,
+        double minScale,
+        double maxScale,
+        Size dsize,
+        int interpolation,
+        uint64 seed,
+        AugmentationReplay* replay);
+
 /** @brief Optional replay record used by randomized augmentations.
 
 The record captures per-transform samples and can be reused to replay the exact same sampling sequence.
